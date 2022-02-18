@@ -1,0 +1,202 @@
+---
+title: "PubH_7462_hw3"
+author: "You Shan Shen"
+date: "2022/2/18"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_knit$set(echo = TRUE, 
+root.dir = rprojroot::find_rstudio_root_file())
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
+
+library(tidyverse)
+
+theme_set(theme(plot.title = element_text(hjust = 0.5), legend.position = "right"))
+```
+
+3.1 Please create a gt summary table which describes the overall mean, median, and sd of the number of days since last order, number of items purchased, number of aisles, number of departments, order number, and percent of items reordered; for all customers’ orders in these data. (20pts)
+
+```{r }
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(gt)
+
+
+instacart_df <- 
+  read.csv("./data/instacart.csv") %>%
+  as.tibble() 
+
+
+summary_instacart <- instacart_df %>% 
+  dplyr::select(order_id, days_since_prior_order, order_number, reordered, add_to_cart_order, aisle_id, department_id) %>%
+  group_by(order_id) %>%
+  summarise( `# of items` = max(add_to_cart_order),
+             `# of aisles` = n_distinct(aisle_id),
+             `# of department` = n_distinct(department_id),
+             `# of order` = unique(order_number),
+             `# of days since prior order` = unique(days_since_prior_order),
+             `reorder %` = 100*mean(reordered),
+             na.rm = TRUE 
+             ) %>%
+  ungroup() %>%
+    summarise(across(contains(c("# of items", "# of aisles","# of department","# of order", "# of days since prior order", "reorder %")),
+                    list(mean = mean, median = median, sd = sd),
+                    na.rm = TRUE, 
+                    .names = "{.col}_{.fn}"))
+
+summary_instacart %>% 
+   gt() %>%
+  tab_header("Summary Mean, Median and SD ") %>%
+  as_raw_html
+```
+
+
+3.2 Create a visualization in ggplot 2 which displays the number of orders (of all
+products) per aisle, with aisles ordered in a meaningful way. (20pts)
+
+```{r, fig.height=20}
+
+
+library(ggplot2)
+
+all_product <- instacart_df %>%
+  mutate(aisle = as.factor(aisle)) %>%
+  mutate(aisle = str_to_title(aisle)) %>% 
+  dplyr::select( aisle, product_name ) %>%
+  group_by(aisle) %>%
+  summarise(count_all = n()) %>%
+  arrange(desc(count_all)) %>%
+  group_by(aisle) %>%
+  ungroup() %>%
+  mutate(aisle  = fct_reorder(.f = aisle , count_all, na.rm = TRUE, .desc = TRUE)) 
+
+library(viridis)
+library(png)  
+
+product_number_per_aisle <- all_product %>%
+  ggplot(aes(x = count_all, y = aisle, color = count_all)) +
+  geom_col() +
+  ylab( "Aisle" ) + 
+ xlab( "Number" ) +
+  scale_color_viridis( "count_all" )
+  
+product_number_per_aisle
+
+dir.create("./figures", showWarnings = FALSE)
+ggsave("./figures/product_number_per_aisle .png", product_number_per_aisle )
+
+```
+
+3.3 What are the top 6 aisles in the the top 6 departments by items purchased?
+Create a ggplot 2 visualization which displays this information, with departments
+and aisles ordered in a meaningful way. (20pts)
+
+```{r, fig.width= 20, fig.height=20}
+
+top6_dep <- instacart_df %>%
+mutate(aisle = str_to_title(aisle), department = str_to_title(department)) %>%
+dplyr::select(  department, aisle, product_name ) %>%
+group_by( department) %>%
+summarise(count_all = n()) %>%
+arrange( desc(count_all)) %>%
+top_n(n = 6)
+
+top6_aisle <- instacart_df %>%
+mutate(aisle = str_to_title(aisle), department = str_to_title(department)) %>%
+dplyr::select( department, aisle, product_name  ) %>%
+filter( department %in% top6_dep$department ) %>%  
+group_by( department, aisle) %>%
+summarise(count_aisle = n()) %>%
+arrange( desc(count_aisle)) %>%
+group_by(department)  %>%
+slice(1:6) 
+  
+  
+base.gg <- 
+  top6_aisle %>%
+  mutate(department = as.factor(department)) 
+
+dep_ggplot <-  base.gg %>%
+  ungroup() %>%
+  mutate(aisle = fct_reorder(.f = aisle, count_aisle, na.rm = TRUE, .desc = TRUE)) %>%
+ggplot(aes(x = count_aisle , y = aisle , colour = department, fill = department)) +
+geom_col()  +
+ggtitle( "Top 6 Department of Top 6 Aisles by Items" ) +
+ylab( "Aisle" ) + 
+xlab( "Number" )
+
+dep_ggplot
+
+department_type_ggplot <-
+  dep_ggplot  + 
+  facet_wrap(~ department, scales = "free_y") + 
+ggtitle( "Top 6 Department of Top 6 Aisles by Items" ) +
+ylab( "Aisle" ) + 
+xlab( "Number" ) 
+
+  
+
+department_type_ggplot
+
+
+ggsave("./figures/dep_ggplot.png", dep_ggplot)
+ggsave("./figures/department_type_ggplot.png", department_type_ggplot)
+
+```
+
+
+3.4 What are the top 5 aisles by items purchased and what are the top 5 items
+purchased in each of those aisles? Please display your answer in a single gt table.
+(20pts)
+
+```{r}
+top5_aisle <- instacart_df %>%
+dplyr::select( aisle, product_name ) %>%
+group_by( aisle) %>% 
+distinct( product_name , .keep_all = TRUE) %>%
+summarize(n = n() ) %>%
+arrange(desc(n)) %>%
+slice(1:5) 
+
+
+items_in_top5_aisle <- instacart_df %>%
+dplyr::select( aisle, product_name ) %>%
+filter(aisle %in% top5_aisle$aisle ) %>%  
+ungroup() %>%
+mutate(aisle = str_to_title(aisle)) %>%
+group_by( aisle, product_name) %>%
+summarise(count_product = n()) %>%
+arrange( desc(count_product)) %>%
+group_by( aisle)  %>%
+slice(1:5) 
+
+
+library(paletteer)
+items_in_top5_aisle %>% 
+rename(
+   Items = product_name,
+    `# of Purchases` = count_product) %>%
+  gt() %>% 
+tab_header(" Top 5 Aisles and Top 5 Items Purchased In Each of Those Aisles ") %>%  
+data_color(
+    columns = `# of Purchases`,
+    colors = scales::col_numeric(
+      palette = c("White", blues9),
+      domain  = c(190, 1200) 
+    )
+  )  %>%
+  tab_footnote(
+    footnote = "Dataset extracted from The Instacart Online Grocery Shopping 2017",
+    locations = cells_column_labels(
+      columns = `# of Purchases`
+    )
+  ) %>%
+  as_raw_html
+
+
+```
+
+
